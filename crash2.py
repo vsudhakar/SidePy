@@ -39,7 +39,7 @@ class Camera(object):
 
 class Obstacle(pygame.sprite.Sprite):
     '''Class for create obstacles'''
-    def __init__(self, x, y):
+    def __init__(self, x, y, moving = False):
         self.x = x
         self.y = y
         pygame.sprite.Sprite.__init__(self)
@@ -49,19 +49,23 @@ class Obstacle(pygame.sprite.Sprite):
         self.direction = -1
         self.contactTop = False
         self.contactBottom = True
+        self.moving = moving
+        
+    def update(self, level, world):
+        if self.moving:
+            if self.rect.top <= self.y-350:  #0
+                self.direction = 1
+            if self.rect.top >= self.y: #224
+                self.direction = -1
 
-    def update(self):
-##        speed = 0.3
-        if self.rect.top <= 0:
-            self.direction = 1
-        if self.rect.top >= 224:
-            self.direction = -1
-##        print self.rect.top
-        speed = 2
-        self.rect.top += speed * self.direction
+            speed = 2
+            self.rect.top += speed * self.direction
 
     def type(self):
-        return "Obstacle"
+        if self.moving:
+            return "Moving Obstacle"
+        else:
+            return "Obstacle"
 
 class Spike(pygame.sprite.Sprite):
     '''Class for creating spikes'''
@@ -88,6 +92,7 @@ class Mushroom(pygame.sprite.Sprite):
 
     def update(self, level, world):
         level.all_sprite.remove(self)
+        world.remove(self)
 
     def type(self):
         return "Mushroom"
@@ -119,7 +124,7 @@ class FlameBall(pygame.sprite.Sprite):
             direct = 1
             if self.direction == "L":
                 direct = -1
-            self.rect.right += 10 * direct
+            self.rect.right += 15 * direct
             print "Moved"
 
     def collide(self, level, world):
@@ -130,12 +135,105 @@ class FlameBall(pygame.sprite.Sprite):
                     # Remove spike
                     level.all_sprite.remove(o)
                     world.remove(o) # Check this
+                if o.type() == "Boss":
+                    o.hurt()
                 self.image = pygame.image.load("world/flameCollide.png").convert_alpha()
                 print "Collision!"
                 self.countdownTimer += 1
 
     def type(self):
         return "FlameBall"
+
+class Boss(pygame.sprite.Sprite):
+    ''' class for boss '''
+    def __init__(self, x, y):
+        pygame.sprite.Sprite.__init__(self)
+        self.movy = 0
+        self.movx = 0
+        self.x = x
+        self.y = y - 160
+        self.image = pygame.image.load('world/boss.png').convert_alpha()
+        self.rect = self.image.get_rect()
+        self.direction = "right"
+        self.frame = 0
+        self.dead = False
+
+        scale = 0.5
+        
+        self.dimx = int(514 * scale)
+        self.dimy = int(384 * scale)
+
+        self.image = pygame.transform.scale(self.image, (self.dimx, self.dimy))
+        self.rect = self.image.get_rect()
+        self.rect.topleft = [self.x, self.y]
+
+        print self.x
+
+        #State
+        self.states = ["shake", "leftCharge", "shake", "rightCharge", "shake", "leftCharge", "shake", "rightCharge", "leftFlame", "leftFlame"]
+        self.state = 0
+
+        self.shakeCounter = 0
+
+        self.hurting = 0
+        self.damage = 0
+
+    def update(self, level):
+        if self.hurting > 0:
+            if self.hurting >= 15:
+                pos = self.rect.topleft
+                self.image = pygame.image.load('world/boss.png').convert_alpha()
+                self.image = pygame.transform.scale(self.image, (self.dimx, self.dimy))
+                self.rect = self.image.get_rect()
+                self.rect.topleft = pos
+                self.hurting = 0
+            else:
+                self.hurt()
+        
+        elif self.states[self.state] == "shake":
+            if self.shakeCounter < 25:
+                if self.shakeCounter % 2 == 0:
+                    self.rect.left += 3
+                else:
+                    self.rect.left -= 3
+                self.shakeCounter += 1
+            else:
+                self.state += 1
+                self.shakeCounter = 0
+        
+        elif self.states[self.state] == "leftCharge":
+            if self.rect.left > 35:
+                self.rect.left -= 10
+            else:
+                self.state += 1
+
+        elif self.states[self.state] == "rightCharge":
+            if self.rect.left < 1175:
+                self.rect.left += 10
+            else:
+                self.state += 1
+
+        elif self.states[self.state] == "leftFlame":
+            flame = FlameBall(self.rect.right - 15, self.rect.top + 30)     
+            level.all_sprite.add(flame)
+            level.flameballs.append(flame)
+            self.state += 1
+
+    def hurt(self):
+        if self.hurting == 0:
+            self.damage += 1
+            pos = self.rect.topleft
+            self.image = pygame.image.load('world/boss_hurt.png').convert_alpha()
+            self.image = pygame.transform.scale(self.image, (self.dimx, self.dimy))
+            self.rect = self.image.get_rect()
+            self.rect.topleft = pos
+            self.hurting += 1
+        else:
+            self.hurting += 1
+                
+
+    def type(self):
+        return "Boss"
 
 class Crashman(pygame.sprite.Sprite):
     '''class for player and collision'''
@@ -233,7 +331,8 @@ class Crashman(pygame.sprite.Sprite):
 
             if self.mushroom:
                 self.image = pygame.transform.scale(self.image, (43, 77))
-                self.rect.bottom -= 10
+
+            
 
     def collide(self, movx, movy, level, world):
         self.contact = False
@@ -246,12 +345,15 @@ class Crashman(pygame.sprite.Sprite):
                         world.remove(o) # Check this
                     else:
                         self.spikeRestart()
+                if o.type() == "Boss":
+                    self.spikeRestart()
                 if o.type() == "Mushroom":
                     o.update(level, world)
                     self.mushroom = True
-                if movx > 0:
+                    self.mushroomResize()
+                if movx > 0 and o.type() != "Moving Obstacle":
                     self.rect.right = o.rect.left
-                if movx < 0:
+                if movx < 0 and o.type() != "Moving Obstacle":
                     self.rect.left = o.rect.right
                 if movy > 0:
                     self.rect.bottom = o.rect.top
@@ -287,6 +389,8 @@ class Crashman(pygame.sprite.Sprite):
         level.all_sprite.add(flame)
         level.flameballs.append(flame)
 
+    def mushroomResize(self):
+        self.rect.bottom -= 10
 
     def type(self):
         return "Crashman"
@@ -314,7 +418,7 @@ class Level(object):
                     self.world.append(obstacle)
                     self.all_sprite.add(self.world)
                 if col == "Q":
-                    obstacle = Obstacle(x, y)
+                    obstacle = Obstacle(x, y, True)
                     self.world.append(obstacle)
                     self.all_sprite.add(self.world)
                     self.obstacles.append(obstacle)
@@ -329,6 +433,10 @@ class Level(object):
                     mushroom = Mushroom(x, y)
                     self.world.append(mushroom)
                     self.mushrooms.append(mushroom)
+                    self.all_sprite.add(self.world)
+                if col == "B":
+                    self.boss = Boss(x, y)
+                    self.world.append(self.boss)
                     self.all_sprite.add(self.world)
                 x += 25
             y += 25
@@ -358,11 +466,12 @@ def game():
     background_rect = background.get_rect()
 
 
-    level = Level("level/level4.txt")
+    level = Level("level/level5.txt")
     level.create_level(0,0)
     world = level.world
     crashman = level.crashman
     obstacles = level.obstacles
+    boss = level.boss
 
     pygame.mouse.set_visible(0)
 
@@ -413,7 +522,7 @@ def game():
         camera.draw_sprites(screen, all_sprite)
 
         for obj in obstacles:
-            obj.update()
+            obj.update(level, world)
 
         for fb in level.flameballs:
             if fb.active:
@@ -423,6 +532,7 @@ def game():
             crashman.update(up, down, left, right, level, world)
 
         camera.update()
+        boss.update(level)
         pygame.display.flip()
 
         if crashman.dead:
