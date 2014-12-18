@@ -111,6 +111,7 @@ class FlameBall(pygame.sprite.Sprite):
         self.contact = False
         self.direction = direct
         world.append(self)
+        self.hit = False
 
     def update(self, level, world):
         if self.countdownTimer > 0:
@@ -148,7 +149,10 @@ class FlameBall(pygame.sprite.Sprite):
                 self.countdownTimer += 1
 
     def type(self):
-        return "FlameBall"
+        if not self.hit:
+            return "FlameBall"
+        else:
+            return "NaN"
 
 class Boss(pygame.sprite.Sprite):
     ''' class for boss '''
@@ -180,7 +184,7 @@ class Boss(pygame.sprite.Sprite):
 
         #State
         self.states = ["shake", "leftCharge", "shake", "rightCharge", "shake", "leftCharge", "shake", "rightCharge", "leftFlame", "end"]
-        self.state = 6
+        self.state = 0
 
         self.shakeCounter = 0
         self.flameCounter = 0
@@ -299,6 +303,8 @@ class Crashman(pygame.sprite.Sprite):
 
         self.mushroomCountdown = 0
 
+        self.health = 10
+
     def update(self, up, down, left, right, level, world):
         if not self.dead:
             if up:
@@ -373,6 +379,9 @@ class Crashman(pygame.sprite.Sprite):
             elif self.mushroomCountdown >= 6:
                 self.mushroom = False
 
+            if self.health <= 0:
+                self.spikeRestart()
+
     def collide(self, movx, movy, level, world):
         self.contact = False
         for o in world:
@@ -386,11 +395,12 @@ class Crashman(pygame.sprite.Sprite):
                         self.spikeRestart()
                 if o.type() == "Boss":
                     if self.mushroom:
-##                        self.mushroom = False
-                        self.mushroomCountdown += 1
+                        self.mushroom = False
+                        self.mushroomCountdown += 10
                         o.hurt()
                     else:
-                        self.spikeRestart()
+                        self.health -= 1
+                    
                 if o.type() == "Mushroom":
                     o.update(level, world)
                     self.mushroom = True
@@ -403,7 +413,8 @@ class Crashman(pygame.sprite.Sprite):
                     else:
                         o.image = pygame.image.load("world/flameCollide.png").convert_alpha()
                         print "Collision!"
-                        self.spikeRestart()
+                        self.health -= 1
+                        o.hit = True
                     o.countdownTimer += 1
                 if movx > 0 and o.type() != "Moving Obstacle":
                     self.rect.right = o.rect.left
@@ -432,12 +443,12 @@ class Crashman(pygame.sprite.Sprite):
     def shoot(self, level, world):
         if level.crashman.crouching:
             if level.crashman.direction == "left":
-                flame = FlameBall(self.rect.right - 15, self.rect.top + 30, "L")
+                flame = FlameBall(self.rect.right - 105, self.rect.top + 30, "L")
             else:
                 flame = FlameBall(self.rect.right - 15, self.rect.top + 30)
         else:
             if level.crashman.direction == "left":
-                flame = FlameBall(self.rect.right - 15, self.rect.top + 30, world, "L")
+                flame = FlameBall(self.rect.right - 105, self.rect.top + 30, world, "L")
             else:
                 flame = FlameBall(self.rect.right - 15, self.rect.top + 30, world)
         level.all_sprite.add(flame)
@@ -520,7 +531,7 @@ def game():
     background_rect = background.get_rect()
 
 
-    level = Level("level/level5-b.txt")
+    level = Level("level/level5.txt")
     level.create_level(0,0)
     world = level.world
     crashman = level.crashman
@@ -537,6 +548,9 @@ def game():
 
     up = down = left = right = False
     x, y = 0, 0
+
+    pygame.font.init()
+    
     while True:
 
 
@@ -587,6 +601,11 @@ def game():
 
         camera.update()
         boss.update(level, world)
+
+        font = pygame.font.Font(None, 20)
+        text = font.render("Health: " + str(crashman.health), 1, (10, 0, 0))
+        screen.blit(text, (10, 10))
+
         pygame.display.flip()
 
         if crashman.dead:
